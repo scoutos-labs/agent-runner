@@ -10,6 +10,23 @@ export interface Encoder {
   done(id: string, role: string, content: string | Record<string, unknown>, extra?: Record<string, unknown>): void
 }
 
+export async function decode_stdin(): Promise<Message[]> {
+  const text = await Bun.stdin.text()
+  if (!text.trim()) return []
+
+  const messages: Message[] = []
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    try {
+      messages.push(JSON.parse(trimmed) as Message)
+    } catch {
+      console.error(`agent-runner: skipping invalid JSON line: ${trimmed}`)
+    }
+  }
+  return messages
+}
+
 export function create_encoder(writer: Writer): Encoder {
   let counter = 0
 
