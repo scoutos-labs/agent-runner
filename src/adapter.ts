@@ -1,5 +1,7 @@
+import Anthropic from "@anthropic-ai/sdk"
 import type { Message, AgentManifest, ProcessDeclaration } from "./types"
 import { parse_role } from "./types"
+import type { Encoder } from "./wire"
 
 // --- Anthropic API types (subset) ---
 
@@ -134,4 +136,117 @@ export function get_system_prompt(messages: Message[], manifest: AgentManifest):
   }
 
   return parts.join("\n\n")
+}
+
+// --- Streaming API call ---
+
+export interface AdapterResult {
+  messages: Message[]
+  stop_reason: string | null
+}
+
+export async function call_llm(
+  input_messages: Message[],
+  manifest: AgentManifest,
+  encoder: Encoder,
+): Promise<AdapterResult> {
+  const client = new Anthropic()
+  const translated = translate_messages(input_messages)
+  const system = get_system_prompt(input_messages, manifest)
+  const tools = translate_tools(manifest)
+  const model = manifest.model ?? "claude-sonnet-4-5-20250514"
+
+  const stream = client.messages.stream({
+    model,
+    max_tokens: 4096,
+    system: system || undefined,
+    messages: translated,
+    tools,
+  })
+
+  const result_messages: Message[] = []
+
+  // Track state per content block by index
+  const block_ids: Map<number, string> = new Map()
+  const block_texts: Map<number, string> = new Map()
+  const block_json_bufs: Map<number, string> = new Map()
+  const block_tool_names: Map<number, string> = new Map()
+  const block_tool_ids: Map<number, string> = new Map()
+
+  for await (const event of stream) {
+    if (event.type === "content_block_start") {
+      const idx = event.index
+      const block = event.content_block
+
+      if (block.type === "text") {
+        const id = encoder.next_id()
+        block_ids.set(idx, id)
+        block_texts.set(idx, "")
+      } else if (block.type === "tool_use") {
+        const id = encoder.next_id()
+        block_ids.set(idx, id)
+        block_json_bufs.set(idx, "")
+        block_tool_names.set(idx, block.name)
+        block_tool_ids.set(idx, block.id)
+      }
+    } else if (event.type === "content_block_delta") {
+      const idx = event.index
+
+      if (event.delta.type === "text_delta") {
+        const id = block_ids.get(idx)!
+        const text = event.delta.text
+        block_texts.set(idx, (block_texts.get(idx) ?? "") + text)
+        encoder.delta(id, "agent", text)
+      } else if (event.delta.type === "input_json_delta") {
+        block_json_bufs.set(
+          idx,
+          (block_json_bufs.get(idx) ?? "") + event.delta.partial_json,
+        )
+      }
+    } else if (event.type === "content_block_stop") {
+      const idx = event.index
+      const id = block_ids.get(idx)
+
+      if (id && block_texts.has(idx)) {
+        // Text block complete
+        const full_text = block_texts.get(idx)!
+        encoder.done(id, "agent", full_text)
+        result_messages.push({
+          id,
+          role: "agent",
+          content: full_text,
+          done: true,
+        })
+      } else if (id && block_json_bufs.has(idx)) {
+        // Tool use block complete
+        const tool_name = block_tool_names.get(idx)!
+        const tool_id = block_tool_ids.get(idx)!
+        const json_buf = block_json_bufs.get(idx)!
+        const input = json_buf ? JSON.parse(json_buf) : {}
+        const role = `process_call:${tool_name}`
+        encoder.done(id, role, input, { call_id: tool_id })
+        result_messages.push({
+          id,
+          role,
+          content: input,
+          done: true,
+          call_id: tool_id,
+        })
+      }
+
+      // Clean up maps for this index
+      block_ids.delete(idx)
+      block_texts.delete(idx)
+      block_json_bufs.delete(idx)
+      block_tool_names.delete(idx)
+      block_tool_ids.delete(idx)
+    }
+  }
+
+  const final_message = await stream.finalMessage()
+
+  return {
+    messages: result_messages,
+    stop_reason: final_message.stop_reason,
+  }
 }
