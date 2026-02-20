@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
 
+const has_api_key = !!process.env.ANTHROPIC_API_KEY
+const api_test = has_api_key ? test : test.skip
+
 interface ParsedLine {
   id?: string
   role?: string
@@ -44,7 +47,7 @@ async function run_agent(
 }
 
 describe("end-to-end smoke specs", () => {
-  test(
+  api_test(
     "single tool call (UC-1)",
     async () => {
       const { lines, exit_code } = await run_agent(
@@ -76,7 +79,7 @@ describe("end-to-end smoke specs", () => {
     { timeout: 30_000 },
   )
 
-  test(
+  api_test(
     "process failure (UC-4)",
     async () => {
       const { lines, exit_code } = await run_agent(
@@ -100,7 +103,7 @@ describe("end-to-end smoke specs", () => {
     { timeout: 30_000 },
   )
 
-  test(
+  api_test(
     "wire format consistency",
     async () => {
       const { lines } = await run_agent(
