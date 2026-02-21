@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-const has_api_key = !!process.env.ANTHROPIC_API_KEY
+const has_api_key = !!process.env.OPENAI_API_KEY
 const api_test = has_api_key ? test : test.skip
 
 interface ParsedLine {

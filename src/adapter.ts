@@ -1,49 +1,51 @@
-import Anthropic from "@anthropic-ai/sdk"
+import OpenAI from "openai"
 import type { Message, AgentManifest, ProcessDeclaration } from "./types"
 import { parse_role } from "./types"
 import type { Encoder } from "./wire"
 
-// --- Anthropic API types (subset) ---
+// --- OpenAI API types (subset) ---
 
-interface AnthropicTextBlock {
-  type: "text"
-  text: string
+interface OpenAITextMessage {
+  role: "system" | "user" | "assistant"
+  content: string | null
+  tool_calls?: OpenAIToolCall[]
 }
 
-interface AnthropicToolUseBlock {
-  type: "tool_use"
-  id: string
-  name: string
-  input: Record<string, unknown>
-}
-
-interface AnthropicToolResultBlock {
-  type: "tool_result"
-  tool_use_id: string
+interface OpenAIToolMessage {
+  role: "tool"
+  tool_call_id: string
   content: string
 }
 
-type AnthropicContentBlock = AnthropicTextBlock | AnthropicToolUseBlock | AnthropicToolResultBlock
-
-interface AnthropicMessage {
-  role: "user" | "assistant"
-  content: string | AnthropicContentBlock[]
+interface OpenAIToolCall {
+  id: string
+  type: "function"
+  function: {
+    name: string
+    arguments: string
+  }
 }
 
-interface AnthropicTool {
-  name: string
-  description: string
-  input_schema: Record<string, unknown>
+type OpenAIMessage = OpenAITextMessage | OpenAIToolMessage
+
+interface OpenAITool {
+  type: "function"
+  function: {
+    name: string
+    description: string
+    parameters: Record<string, unknown>
+  }
 }
 
 // --- Translation functions ---
 
 /**
- * Translate spec messages to Anthropic API format.
- * Filters out system messages. Merges adjacent same-role messages.
+ * Translate spec messages to OpenAI API format.
+ * Filters out system messages (handled by get_system_prompt).
+ * Merges adjacent agent text + process_call into a single assistant message.
  */
-export function translate_messages(messages: Message[]): AnthropicMessage[] {
-  const translated: AnthropicMessage[] = []
+export function translate_messages(messages: Message[]): OpenAIMessage[] {
+  const translated: OpenAIMessage[] = []
 
   for (const msg of messages) {
     const parsed = parse_role(msg.role)
@@ -51,55 +53,41 @@ export function translate_messages(messages: Message[]): AnthropicMessage[] {
     // Skip system messages — handled by get_system_prompt
     if (parsed.type === "system") continue
 
-    let anthropic_role: "user" | "assistant"
-    let content_blocks: AnthropicContentBlock[]
-
     if (parsed.type === "user") {
-      anthropic_role = "user"
-      content_blocks = [{ type: "text", text: msg.content as string }]
+      translated.push({ role: "user", content: msg.content as string })
     } else if (parsed.type === "agent") {
-      anthropic_role = "assistant"
-      content_blocks = [{ type: "text", text: msg.content as string }]
+      translated.push({ role: "assistant", content: msg.content as string })
     } else if (parsed.type === "process_call") {
-      anthropic_role = "assistant"
-      content_blocks = [{
-        type: "tool_use",
-        id: msg.id!,
-        name: parsed.identity!,
-        input: msg.content as Record<string, unknown>,
-      }]
-    } else if (parsed.type === "process_result") {
-      anthropic_role = "user"
-      content_blocks = [{
-        type: "tool_result",
-        tool_use_id: msg.call_id!,
-        content: msg.content as string,
-      }]
-    } else {
-      continue
-    }
-
-    // Merge with previous message if same Anthropic role
-    const prev = translated[translated.length - 1]
-    if (prev && prev.role === anthropic_role) {
-      // Normalize previous content to blocks array if it's a string
-      if (typeof prev.content === "string") {
-        prev.content = [{ type: "text", text: prev.content }]
+      const tool_call: OpenAIToolCall = {
+        id: msg.call_id!,
+        type: "function",
+        function: {
+          name: parsed.identity!,
+          arguments: JSON.stringify(msg.content),
+        },
       }
-      prev.content.push(...content_blocks)
-    } else {
-      translated.push({ role: anthropic_role, content: content_blocks })
-    }
-  }
 
-  // Simplify single text block messages back to plain strings
-  for (const msg of translated) {
-    if (
-      Array.isArray(msg.content) &&
-      msg.content.length === 1 &&
-      msg.content[0].type === "text"
-    ) {
-      msg.content = (msg.content[0] as AnthropicTextBlock).text
+      // Merge with previous assistant message if there is one
+      const prev = translated[translated.length - 1]
+      if (prev && prev.role === "assistant" && !("tool_call_id" in prev)) {
+        const text_msg = prev as OpenAITextMessage
+        if (!text_msg.tool_calls) {
+          text_msg.tool_calls = []
+        }
+        text_msg.tool_calls.push(tool_call)
+      } else {
+        translated.push({
+          role: "assistant",
+          content: null,
+          tool_calls: [tool_call],
+        })
+      }
+    } else if (parsed.type === "process_result") {
+      translated.push({
+        role: "tool",
+        tool_call_id: msg.call_id!,
+        content: msg.content as string,
+      })
     }
   }
 
@@ -107,13 +95,16 @@ export function translate_messages(messages: Message[]): AnthropicMessage[] {
 }
 
 /**
- * Translate process declarations to Anthropic tool format.
+ * Translate process declarations to OpenAI tool format.
  */
-export function translate_tools(manifest: AgentManifest): AnthropicTool[] {
+export function translate_tools(manifest: AgentManifest): OpenAITool[] {
   return manifest.processes.map((proc: ProcessDeclaration) => ({
-    name: proc.name,
-    description: proc.description,
-    input_schema: proc.input_schema,
+    type: "function" as const,
+    function: {
+      name: proc.name,
+      description: proc.description,
+      parameters: proc.input_schema,
+    },
   }))
 }
 
@@ -150,103 +141,119 @@ export async function call_llm(
   manifest: AgentManifest,
   encoder: Encoder,
 ): Promise<AdapterResult> {
-  const client = new Anthropic()
+  const client = new OpenAI()
   const translated = translate_messages(input_messages)
   const system = get_system_prompt(input_messages, manifest)
   const tools = translate_tools(manifest)
-  const model = manifest.model ?? "claude-sonnet-4-5-20250514"
+  const model = manifest.model ?? "gpt-4o"
 
-  const stream = client.messages.stream({
+  // Prepend system message if present
+  const api_messages: OpenAIMessage[] = system
+    ? [{ role: "system" as const, content: system }, ...translated]
+    : translated
+
+  const stream = await client.chat.completions.create({
     model,
-    max_tokens: 4096,
-    system: system || undefined,
-    messages: translated,
-    tools,
+    messages: api_messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+    tools: tools as OpenAI.Chat.Completions.ChatCompletionTool[],
+    stream: true,
   })
 
   const result_messages: Message[] = []
 
-  // Track state per content block by index
-  const block_ids: Map<number, string> = new Map()
-  const block_texts: Map<number, string> = new Map()
-  const block_json_bufs: Map<number, string> = new Map()
-  const block_tool_names: Map<number, string> = new Map()
-  const block_tool_ids: Map<number, string> = new Map()
+  // Track current text message
+  let text_id: string | null = null
+  let text_buf = ""
 
-  for await (const event of stream) {
-    if (event.type === "content_block_start") {
-      const idx = event.index
-      const block = event.content_block
+  // Track tool calls by index
+  const tool_ids: Map<number, string> = new Map()       // index → tool_call.id
+  const tool_names: Map<number, string> = new Map()      // index → function name
+  const tool_arg_bufs: Map<number, string> = new Map()   // index → accumulated arguments JSON
 
-      if (block.type === "text") {
-        const id = encoder.next_id()
-        block_ids.set(idx, id)
-        block_texts.set(idx, "")
-      } else if (block.type === "tool_use") {
-        const id = encoder.next_id()
-        block_ids.set(idx, id)
-        block_json_bufs.set(idx, "")
-        block_tool_names.set(idx, block.name)
-        block_tool_ids.set(idx, block.id)
+  let finish_reason: string | null = null
+
+  for await (const chunk of stream) {
+    const choice = chunk.choices[0]
+    if (!choice) continue
+
+    const delta = choice.delta
+
+    // Text content
+    if (delta?.content) {
+      if (!text_id) {
+        text_id = encoder.next_id()
       }
-    } else if (event.type === "content_block_delta") {
-      const idx = event.index
+      text_buf += delta.content
+      encoder.delta(text_id, "agent", delta.content)
+    }
 
-      if (event.delta.type === "text_delta") {
-        const id = block_ids.get(idx)!
-        const text = event.delta.text
-        block_texts.set(idx, (block_texts.get(idx) ?? "") + text)
-        encoder.delta(id, "agent", text)
-      } else if (event.delta.type === "input_json_delta") {
-        block_json_bufs.set(
-          idx,
-          (block_json_bufs.get(idx) ?? "") + event.delta.partial_json,
-        )
-      }
-    } else if (event.type === "content_block_stop") {
-      const idx = event.index
-      const id = block_ids.get(idx)
-
-      if (id && block_texts.has(idx)) {
-        // Text block complete
-        const full_text = block_texts.get(idx)!
-        encoder.done(id, "agent", full_text)
+    // Tool calls
+    if (delta?.tool_calls) {
+      // If we had text before tool calls, finalize it
+      if (text_id && text_buf) {
+        encoder.done(text_id, "agent", text_buf)
         result_messages.push({
-          id,
+          id: text_id,
           role: "agent",
-          content: full_text,
+          content: text_buf,
           done: true,
         })
-      } else if (id && block_json_bufs.has(idx)) {
-        // Tool use block complete
-        const tool_name = block_tool_names.get(idx)!
-        const tool_id = block_tool_ids.get(idx)!
-        const json_buf = block_json_bufs.get(idx)!
-        const input = json_buf ? JSON.parse(json_buf) : {}
-        const role = `process_call:${tool_name}`
-        encoder.done(id, role, input, { call_id: tool_id })
-        result_messages.push({
-          id,
-          role,
-          content: input,
-          done: true,
-          call_id: tool_id,
-        })
+        text_id = null
+        text_buf = ""
       }
 
-      // Clean up maps for this index
-      block_ids.delete(idx)
-      block_texts.delete(idx)
-      block_json_bufs.delete(idx)
-      block_tool_names.delete(idx)
-      block_tool_ids.delete(idx)
+      for (const tc of delta.tool_calls) {
+        const idx = tc.index
+
+        // First chunk for this tool call — has id and name
+        if (tc.id) {
+          tool_ids.set(idx, tc.id)
+        }
+        if (tc.function?.name) {
+          tool_names.set(idx, tc.function.name)
+        }
+        if (tc.function?.arguments) {
+          tool_arg_bufs.set(idx, (tool_arg_bufs.get(idx) ?? "") + tc.function.arguments)
+        }
+      }
+    }
+
+    if (choice.finish_reason) {
+      finish_reason = choice.finish_reason
     }
   }
 
-  const final_message = await stream.finalMessage()
+  // Finalize any remaining text
+  if (text_id && text_buf) {
+    encoder.done(text_id, "agent", text_buf)
+    result_messages.push({
+      id: text_id,
+      role: "agent",
+      content: text_buf,
+      done: true,
+    })
+  }
+
+  // Finalize tool calls
+  for (const [idx, call_id] of tool_ids.entries()) {
+    const tool_name = tool_names.get(idx) ?? "unknown"
+    const arg_buf = tool_arg_bufs.get(idx) ?? "{}"
+    const input = JSON.parse(arg_buf)
+    const msg_id = encoder.next_id()
+    const role = `process_call:${tool_name}`
+
+    encoder.done(msg_id, role, input, { call_id })
+    result_messages.push({
+      id: msg_id,
+      role,
+      content: input,
+      done: true,
+      call_id,
+    })
+  }
 
   return {
     messages: result_messages,
-    stop_reason: final_message.stop_reason,
+    stop_reason: finish_reason,
   }
 }

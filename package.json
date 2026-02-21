@@ -8,6 +8,6 @@
     "spec": "bun test specs/"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0"
+    "openai": "^4.80.0"
   }
 }

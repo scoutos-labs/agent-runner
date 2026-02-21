@@ -36,86 +36,89 @@ describe("translate_messages", () => {
     expect(result).toEqual([{ role: "user", content: "hello" }])
   })
 
-  test("process_call maps to assistant with tool_use content block", () => {
+  test("process_call maps to assistant with tool_calls", () => {
     const messages: Message[] = [
-      { id: "msg_1", role: "process_call:bash", content: { command: "ls" } },
+      { id: "msg_1", role: "process_call:bash", call_id: "call_abc", content: { command: "ls" } },
     ]
     const result = translate_messages(messages)
     expect(result).toEqual([{
       role: "assistant",
-      content: [{
-        type: "tool_use",
-        id: "msg_1",
-        name: "bash",
-        input: { command: "ls" },
+      content: null,
+      tool_calls: [{
+        id: "call_abc",
+        type: "function",
+        function: {
+          name: "bash",
+          arguments: '{"command":"ls"}',
+        },
       }],
     }])
   })
 
-  test("process_result maps to user with tool_result content block", () => {
+  test("process_result maps to tool message", () => {
     const messages: Message[] = [
-      { role: "process_result:bash", call_id: "msg_1", content: "file.txt" },
+      { role: "process_result:bash", call_id: "call_abc", content: "file.txt" },
     ]
     const result = translate_messages(messages)
     expect(result).toEqual([{
-      role: "user",
-      content: [{
-        type: "tool_result",
-        tool_use_id: "msg_1",
-        content: "file.txt",
+      role: "tool",
+      tool_call_id: "call_abc",
+      content: "file.txt",
+    }])
+  })
+
+  test("agent text + process_call merge into one assistant message", () => {
+    const messages: Message[] = [
+      { role: "agent", content: "I'll run ls for you." },
+      { id: "msg_1", role: "process_call:bash", call_id: "call_abc", content: { command: "ls" } },
+    ]
+    const result = translate_messages(messages)
+    expect(result).toEqual([{
+      role: "assistant",
+      content: "I'll run ls for you.",
+      tool_calls: [{
+        id: "call_abc",
+        type: "function",
+        function: {
+          name: "bash",
+          arguments: '{"command":"ls"}',
+        },
       }],
     }])
   })
 
-  test("adjacent same-role messages are merged", () => {
-    const messages: Message[] = [
-      { role: "user", content: "hello" },
-      { role: "process_result:bash", call_id: "msg_1", content: "output" },
-    ]
-    const result = translate_messages(messages)
-    expect(result).toEqual([{
-      role: "user",
-      content: [
-        { type: "text", text: "hello" },
-        { type: "tool_result", tool_use_id: "msg_1", content: "output" },
-      ],
-    }])
-  })
-
-  test("full conversation round-trip produces alternating roles", () => {
+  test("full conversation round-trip", () => {
     const messages: Message[] = [
       { role: "user", content: "list files" },
       { role: "agent", content: "I'll run ls for you." },
-      { id: "msg_1", role: "process_call:bash", content: { command: "ls" } },
-      { role: "process_result:bash", call_id: "msg_1", content: "file.txt\nREADME.md" },
+      { id: "msg_1", role: "process_call:bash", call_id: "call_abc", content: { command: "ls" } },
+      { role: "process_result:bash", call_id: "call_abc", content: "file.txt\nREADME.md" },
       { role: "agent", content: "Here are your files: file.txt, README.md" },
     ]
     const result = translate_messages(messages)
 
-    // Should be alternating user/assistant
     expect(result.length).toBe(4)
     expect(result[0].role).toBe("user")
     expect(result[1].role).toBe("assistant")
-    expect(result[2].role).toBe("user")
+    expect(result[2].role).toBe("tool")
     expect(result[3].role).toBe("assistant")
 
-    // Second assistant message merges agent text + tool_use
-    expect(result[1].content).toEqual([
-      { type: "text", text: "I'll run ls for you." },
-      { type: "tool_use", id: "msg_1", name: "bash", input: { command: "ls" } },
-    ])
+    // Agent text + tool_call merged into one assistant message
+    const assistant_msg = result[1] as { role: string; content: string | null; tool_calls?: unknown[] }
+    expect(assistant_msg.content).toBe("I'll run ls for you.")
+    expect(assistant_msg.tool_calls).toHaveLength(1)
 
-    // process_result becomes user with tool_result
-    expect(result[2].content).toEqual([{
-      type: "tool_result",
-      tool_use_id: "msg_1",
+    // Tool result is its own message
+    expect(result[2]).toEqual({
+      role: "tool",
+      tool_call_id: "call_abc",
       content: "file.txt\nREADME.md",
-    }])
+    })
   })
 })
 
 describe("translate_tools", () => {
-  test("maps process declarations to Anthropic tool format", () => {
+  test("maps process declarations to OpenAI tool format", () => {
     const manifest: AgentManifest = {
       name: "test",
       processes: [
@@ -134,14 +137,17 @@ describe("translate_tools", () => {
     }
     const result = translate_tools(manifest)
     expect(result).toEqual([{
-      name: "bash",
-      description: "Execute a shell command",
-      input_schema: {
-        type: "object",
-        properties: {
-          command: { type: "string" },
+      type: "function",
+      function: {
+        name: "bash",
+        description: "Execute a shell command",
+        parameters: {
+          type: "object",
+          properties: {
+            command: { type: "string" },
+          },
+          required: ["command"],
         },
-        required: ["command"],
       },
     }])
   })

@@ -2,7 +2,7 @@
   "name": "basic",
   "description": "A basic agent with bash access for testing the runner.",
   "system": "You are a helpful assistant. Use the bash tool to execute commands when needed. Be concise.",
-  "model": "claude-sonnet-4-5-20250514",
+  "model": "gpt-5.2",
   "processes": [
     {
       "name": "bash",
