@@ -1,12 +1,13 @@
 import { decode_stdin } from "./wire"
 import { run } from "./runner"
 import { parse_role } from "./types"
-import type { AgentManifest } from "./types"
+import { load_manifest } from "./manifest"
 
 const USAGE = `Usage: agent-runner run --agent <path>
 
-Pipe JSONL messages to stdin:
-  echo '{"role":"user","content":"Hello"}' | bun run src/index.ts run --agent agents/basic.json`
+Pipe input to stdin (bare text or JSONL, .json or .md manifest):
+  echo "Hello" | bun run src/index.ts run --agent agents/basic.json
+  echo "Hello" | bun run src/index.ts run --agent path/to/PERSONA.md`
 
 function parse_args(args: string[]): { agent_path: string } | null {
   const run_idx = args.indexOf("run")
@@ -33,10 +34,10 @@ async function main() {
     process.exit(1)
   }
 
-  // Load manifest
-  let manifest: AgentManifest
+  // Load manifest (JSON or PERSONA.md)
+  let manifest
   try {
-    manifest = await Bun.file(parsed.agent_path).json()
+    manifest = await load_manifest(parsed.agent_path)
   } catch (err) {
     console.error(`agent-runner: failed to load manifest: ${parsed.agent_path}`)
     process.exit(1)
