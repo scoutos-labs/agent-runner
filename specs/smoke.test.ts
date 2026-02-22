@@ -1,7 +1,17 @@
 import { describe, expect, test } from "bun:test"
 
-const has_api_key = !!process.env.OPENAI_API_KEY
-const api_test = has_api_key ? test : test.skip
+const has_openai_key = !!process.env.OPENAI_API_KEY
+const openai_test = has_openai_key ? test : test.skip
+
+// Claude Code adapter just needs the `claude` CLI available
+let has_claude_cli = false
+try {
+  const proc = Bun.spawnSync(["which", "claude"])
+  has_claude_cli = proc.exitCode === 0
+} catch {
+  has_claude_cli = false
+}
+const claude_test = has_claude_cli ? test : test.skip
 
 interface ParsedLine {
   id?: string
@@ -46,64 +56,55 @@ async function run_agent(
   return { lines, exit_code }
 }
 
-describe("end-to-end smoke specs", () => {
-  api_test(
+describe("end-to-end smoke specs (openai)", () => {
+  openai_test(
     "single tool call (UC-1)",
     async () => {
       const { lines, exit_code } = await run_agent(
         '{"role":"user","content":"List the files in the current directory using ls"}',
       )
 
-      // Every line is valid JSON (enforced by run_agent parser)
       expect(lines.length).toBeGreaterThan(0)
 
-      // Find done lines only
       const done_lines = lines.filter((l) => l.done === true)
 
-      // At least one process_call:bash done line
       const process_calls = done_lines.filter((l) => l.role?.startsWith("process_call:bash"))
       expect(process_calls.length).toBeGreaterThanOrEqual(1)
 
-      // At least one process_result:bash done line with exit_code: 0
       const process_results = done_lines.filter((l) => l.role?.startsWith("process_result:bash"))
       expect(process_results.length).toBeGreaterThanOrEqual(1)
       expect(process_results.some((l) => l.exit_code === 0)).toBe(true)
 
-      // At least one agent done line (the final response)
       const agent_dones = done_lines.filter((l) => l.role === "agent")
       expect(agent_dones.length).toBeGreaterThanOrEqual(1)
 
-      // Exit code is 0
       expect(exit_code).toBe(0)
     },
     { timeout: 30_000 },
   )
 
-  api_test(
+  openai_test(
     "process failure (UC-4)",
     async () => {
       const { lines, exit_code } = await run_agent(
         '{"role":"user","content":"Read the file /nonexistent/path/that/does/not/exist.txt using cat"}',
       )
 
-      // Every line is valid JSON (enforced by run_agent parser)
       expect(lines.length).toBeGreaterThan(0)
 
       const done_lines = lines.filter((l) => l.done === true)
 
-      // process_result has exit_code > 0
       const process_results = done_lines.filter((l) => l.role?.startsWith("process_result"))
       expect(process_results.length).toBeGreaterThanOrEqual(1)
       expect(process_results.some((l) => l.exit_code !== undefined && l.exit_code > 0)).toBe(true)
 
-      // Agent still produces a final response (handles the error)
       const agent_dones = done_lines.filter((l) => l.role === "agent")
       expect(agent_dones.length).toBeGreaterThanOrEqual(1)
     },
     { timeout: 30_000 },
   )
 
-  api_test(
+  openai_test(
     "wire format consistency",
     async () => {
       const { lines } = await run_agent(
@@ -113,7 +114,6 @@ describe("end-to-end smoke specs", () => {
       const done_lines = lines.filter((l) => l.done === true)
       const delta_lines = lines.filter((l) => l.delta !== undefined)
 
-      // For every id that has delta lines, a done line with the same id must exist
       const delta_ids = new Set(delta_lines.map((l) => l.id))
       const done_ids = new Set(done_lines.map((l) => l.id))
 
@@ -121,15 +121,116 @@ describe("end-to-end smoke specs", () => {
         expect(done_ids.has(id)).toBe(true)
       }
 
-      // Every process_call done line has a matching process_result with call_id pointing back
       const call_dones = done_lines.filter((l) => l.role?.startsWith("process_call:"))
       const result_dones = done_lines.filter((l) => l.role?.startsWith("process_result:"))
 
       for (const call of call_dones) {
-        const matching_result = result_dones.find((r) => r.call_id === call.id)
+        const matching_result = result_dones.find((r) => r.call_id === call.call_id)
         expect(matching_result).toBeDefined()
       }
     },
     { timeout: 30_000 },
+  )
+})
+
+describe("end-to-end smoke specs (wire-format adapter)", () => {
+  test(
+    "custom shell script adapter receives messages and emits wire JSONL",
+    async () => {
+      const { lines, exit_code } = await run_agent(
+        '{"role":"user","content":"test input"}',
+        "agents/wire-echo.json",
+      )
+
+      expect(lines.length).toBeGreaterThan(0)
+
+      const done_lines = lines.filter((l) => l.done === true)
+      expect(done_lines.length).toBe(1)
+      expect(done_lines[0].role).toBe("agent")
+      expect(typeof done_lines[0].content).toBe("string")
+      expect((done_lines[0].content as string)).toContain("test input")
+      expect(exit_code).toBe(0)
+    },
+    { timeout: 10_000 },
+  )
+})
+
+describe("end-to-end smoke specs (claude-code)", () => {
+  claude_test(
+    "simple text response",
+    async () => {
+      const { lines, exit_code } = await run_agent(
+        '{"role":"user","content":"Reply with exactly: hello from agent-runner"}',
+        "agents/basic-claude-code.json",
+      )
+
+      expect(lines.length).toBeGreaterThan(0)
+
+      const done_lines = lines.filter((l) => l.done === true)
+
+      // At least one agent done line with the response
+      const agent_dones = done_lines.filter((l) => l.role === "agent")
+      expect(agent_dones.length).toBeGreaterThanOrEqual(1)
+
+      // Every line is valid JSON (enforced by run_agent parser)
+      // Exit code is 0
+      expect(exit_code).toBe(0)
+    },
+    { timeout: 60_000 },
+  )
+
+  claude_test(
+    "tool use produces process_call and process_result in wire output",
+    async () => {
+      const { lines, exit_code } = await run_agent(
+        '{"role":"user","content":"Run this exact bash command and show me the output: echo hello-from-agent-runner"}',
+        "agents/basic-claude-code.json",
+      )
+
+      expect(lines.length).toBeGreaterThan(0)
+
+      const done_lines = lines.filter((l) => l.done === true)
+
+      // Should see process_call and process_result for the tool use
+      const process_calls = done_lines.filter((l) => l.role?.startsWith("process_call:"))
+      expect(process_calls.length).toBeGreaterThanOrEqual(1)
+
+      const process_results = done_lines.filter((l) => l.role?.startsWith("process_result:"))
+      expect(process_results.length).toBeGreaterThanOrEqual(1)
+
+      // At least one agent done line (final response)
+      const agent_dones = done_lines.filter((l) => l.role === "agent")
+      expect(agent_dones.length).toBeGreaterThanOrEqual(1)
+
+      // Every process_call has a matching process_result
+      for (const call of process_calls) {
+        const matching = process_results.find((r) => r.call_id === call.call_id)
+        expect(matching).toBeDefined()
+      }
+
+      expect(exit_code).toBe(0)
+    },
+    { timeout: 60_000 },
+  )
+
+  claude_test(
+    "wire format — all lines are valid JSONL",
+    async () => {
+      const { lines } = await run_agent(
+        '{"role":"user","content":"What is 2+2? Reply with just the number."}',
+        "agents/basic-claude-code.json",
+      )
+
+      // run_agent already validates JSON parsing — if we get here, all lines parsed
+      expect(lines.length).toBeGreaterThan(0)
+
+      // Every done line has an id and role
+      const done_lines = lines.filter((l) => l.done === true)
+      for (const line of done_lines) {
+        expect(line.id).toBeDefined()
+        expect(line.role).toBeDefined()
+      }
+    },
+    { timeout: 60_000 },
   )
 })
