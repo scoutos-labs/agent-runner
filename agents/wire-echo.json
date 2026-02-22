@@ -1,0 +1,6 @@
+{
+  "name": "wire-echo",
+  "description": "Proof-of-concept: a shell script that speaks wire format.",
+  "adapter": "./adapters/echo.sh",
+  "processes": []
+}
