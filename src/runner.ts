@@ -2,6 +2,8 @@ import type { Message, AgentManifest } from "./types"
 import { parse_role } from "./types"
 import { create_encoder } from "./wire"
 import { call_llm } from "./adapter"
+import { run_command_adapter } from "./command-adapter"
+import { resolve_adapter } from "./presets"
 import { execute_process } from "./executor"
 
 const MAX_TURNS = 20
@@ -12,13 +14,22 @@ export async function run(
 ): Promise<number> {
   const encoder = create_encoder(process.stdout)
   const messages: Message[] = [...input_messages]
+
+  const config = resolve_adapter(manifest.adapter ?? "openai", manifest, messages)
+
+  // Command-based adapter — self-managed tool loop
+  if (config.kind === "command") {
+    const result = await run_command_adapter(config, encoder, messages)
+    return result.exit_code === 0 ? 0 : 1
+  }
+
+  // Built-in adapter — runner manages the tool loop
   let exhausted = false
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const result = await call_llm(messages, manifest, encoder)
     messages.push(...result.messages)
 
-    // Find process_call messages in the returned batch
     const calls = result.messages.filter((msg) => {
       const parsed = parse_role(msg.role)
       return parsed.type === "process_call"
@@ -40,7 +51,6 @@ export async function run(
       messages.push(result_msg)
     }
 
-    // Mark exhausted if this is the last iteration
     if (turn === MAX_TURNS - 1) {
       exhausted = true
     }

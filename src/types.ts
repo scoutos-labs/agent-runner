@@ -53,6 +53,31 @@ export interface AgentManifest {
   name: string
   description?: string
   system?: string
-  model?: string
+  adapter?: string
   processes: ProcessDeclaration[]
+  options?: Record<string, Record<string, unknown>>
+}
+
+// --- Adapter resolution ---
+
+/** Output format the adapter subprocess emits */
+export type OutputFormat = "wire" | "claude-code-stream-json"
+
+/** Resolved adapter configuration */
+export type AdapterConfig =
+  | BuiltInAdapterConfig
+  | CommandAdapterConfig
+
+/** Built-in adapter — runs in-process, runner manages tool loop */
+export interface BuiltInAdapterConfig {
+  kind: "built_in"
+  name: string
+}
+
+/** Command-based adapter — spawns subprocess, self-managed tool loop */
+export interface CommandAdapterConfig {
+  kind: "command"
+  name: string
+  cmd: string[]
+  output_format: OutputFormat
 }
