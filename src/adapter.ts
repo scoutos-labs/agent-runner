@@ -141,11 +141,14 @@ export async function call_llm(
   manifest: AgentManifest,
   encoder: Encoder,
 ): Promise<AdapterResult> {
+  const opts = manifest.options?.openai ?? {}
   const client = new OpenAI()
   const translated = translate_messages(input_messages)
   const system = get_system_prompt(input_messages, manifest)
   const tools = translate_tools(manifest)
-  const model = manifest.model ?? "gpt-4o"
+  const model = (opts.model as string) ?? "gpt-4o"
+  const max_tokens = (opts.max_tokens as number) ?? 4096
+  const temperature = opts.temperature as number | undefined
 
   // Prepend system message if present
   const api_messages: OpenAIMessage[] = system
@@ -156,6 +159,8 @@ export async function call_llm(
     model,
     messages: api_messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
     tools: tools as OpenAI.Chat.Completions.ChatCompletionTool[],
+    max_tokens,
+    ...(temperature !== undefined && { temperature }),
     stream: true,
   })
 

@@ -2,7 +2,6 @@
   "name": "basic",
   "description": "A basic agent with bash access for testing the runner.",
   "system": "You are a helpful assistant. Use the bash tool to execute commands when needed. Be concise.",
-  "model": "gpt-5.2",
   "processes": [
     {
       "name": "bash",
@@ -18,5 +17,11 @@
         "required": ["command"]
       }
     }
-  ]
+  ],
+  "options": {
+    "openai": {
+      "model": "gpt-4o",
+      "max_tokens": 4096
+    }
+  }
 }

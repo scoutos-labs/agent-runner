@@ -10,9 +10,30 @@ export interface Encoder {
   done(id: string, role: string, content: string | Record<string, unknown>, extra?: Record<string, unknown>): void
 }
 
-export async function decode_stdin(): Promise<Message[]> {
-  const text = await Bun.stdin.text()
+/**
+ * Parse raw input text — auto-detects JSONL vs bare text.
+ *
+ * If the first non-blank line is valid JSON with a `role` field,
+ * the entire input is parsed as JSONL messages. Otherwise the full
+ * text is wrapped as a single user message.
+ */
+export function parse_input(text: string): Message[] {
   if (!text.trim()) return []
+
+  const first_line = text.split("\n").find((l) => l.trim())
+  if (!first_line) return []
+
+  let is_jsonl = false
+  try {
+    const parsed = JSON.parse(first_line.trim())
+    is_jsonl = parsed && typeof parsed === "object" && "role" in parsed
+  } catch {
+    is_jsonl = false
+  }
+
+  if (!is_jsonl) {
+    return [{ role: "user", content: text.trim() }]
+  }
 
   const messages: Message[] = []
   for (const line of text.split("\n")) {
@@ -25,6 +46,11 @@ export async function decode_stdin(): Promise<Message[]> {
     }
   }
   return messages
+}
+
+export async function decode_stdin(): Promise<Message[]> {
+  const text = await Bun.stdin.text()
+  return parse_input(text)
 }
 
 export function create_encoder(writer: Writer): Encoder {

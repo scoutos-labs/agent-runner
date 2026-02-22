@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { create_encoder } from "./wire"
+import { create_encoder, parse_input } from "./wire"
 import type { Writer } from "./wire"
 
 function mock_writer(): Writer & { lines: string[] } {
@@ -11,6 +11,46 @@ function mock_writer(): Writer & { lines: string[] } {
     },
   }
 }
+
+describe("parse_input", () => {
+  test("bare text becomes a user message", () => {
+    const result = parse_input("What is 2+2?")
+    expect(result).toEqual([{ role: "user", content: "What is 2+2?" }])
+  })
+
+  test("multi-line bare text becomes one user message", () => {
+    const result = parse_input("Line one\nLine two\nLine three")
+    expect(result).toEqual([{ role: "user", content: "Line one\nLine two\nLine three" }])
+  })
+
+  test("JSONL input is parsed as messages", () => {
+    const input = '{"role":"user","content":"hello"}\n{"role":"system","content":"be helpful"}'
+    const result = parse_input(input)
+    expect(result).toEqual([
+      { role: "user", content: "hello" },
+      { role: "system", content: "be helpful" },
+    ])
+  })
+
+  test("empty input returns empty array", () => {
+    expect(parse_input("")).toEqual([])
+    expect(parse_input("  \n  ")).toEqual([])
+  })
+
+  test("JSON without role field is treated as bare text", () => {
+    const result = parse_input('{"key": "value"}')
+    expect(result).toEqual([{ role: "user", content: '{"key": "value"}' }])
+  })
+
+  test("JSONL with blank lines is handled", () => {
+    const input = '\n{"role":"user","content":"hello"}\n\n{"role":"agent","content":"hi"}\n'
+    const result = parse_input(input)
+    expect(result).toEqual([
+      { role: "user", content: "hello" },
+      { role: "agent", content: "hi" },
+    ])
+  })
+})
 
 describe("create_encoder", () => {
   describe("next_id", () => {

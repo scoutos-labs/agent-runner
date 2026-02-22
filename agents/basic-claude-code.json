@@ -1,0 +1,12 @@
+{
+  "name": "basic-claude-code",
+  "description": "A basic agent using Claude Code as the adapter.",
+  "system": "You are a helpful assistant. Be concise.",
+  "adapter": "claude-code",
+  "processes": [],
+  "options": {
+    "claude-code": {
+      "model": "claude-sonnet-4-5-20250929"
+    }
+  }
+}
