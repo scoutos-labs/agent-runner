@@ -1,7 +1,6 @@
 #!/usr/bin/env zsh
 set -euo pipefail
 
-AGENT_DIR="$HOME/Code/agent-runner"
 IDENTITY_DIR="$HOME/Code/dottie-weaver/identity"
 
 # --- Pre: sync identity ---
@@ -19,4 +18,4 @@ else
 fi
 
 # --- Run ---
-echo "$goal" | bun run "$AGENT_DIR/src/index.ts" run --agent "$AGENT_DIR/agents/dottie.json"
+echo "$goal" | agent @dottie
