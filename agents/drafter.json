@@ -1,6 +1,6 @@
 {
-  "name": "ollama-32b",
-  "description": "Local Qwen3 32B via Ollama for general work.",
+  "name": "drafter",
+  "description": "Local general-purpose agent for drafting, summarizing, and routine work.",
   "system": "You are a helpful assistant. Be concise.",
   "adapter": "ollama",
   "processes": [
@@ -10,9 +10,14 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "command": { "type": "string", "description": "The shell command to execute" }
+          "command": {
+            "type": "string",
+            "description": "The shell command to execute"
+          }
         },
-        "required": ["command"]
+        "required": [
+          "command"
+        ]
       }
     }
   ],

@@ -248,11 +248,11 @@ const ollama_test = has_ollama ? test : test.skip
 
 describe("end-to-end smoke specs (ollama)", () => {
   ollama_test(
-    "simple text response (32b)",
+    "simple text response (drafter)",
     async () => {
       const { lines, exit_code } = await run_agent(
         '{"role":"user","content":"What is 2+2? Reply with just the number, no thinking."}',
-        "agents/ollama-32b.json",
+        "agents/drafter.json",
       )
 
       expect(lines.length).toBeGreaterThan(0)
@@ -267,11 +267,11 @@ describe("end-to-end smoke specs (ollama)", () => {
   )
 
   ollama_test(
-    "tool calling (32b)",
+    "tool calling (drafter)",
     async () => {
       const { lines, exit_code } = await run_agent(
         '{"role":"user","content":"List the files in the current directory using ls"}',
-        "agents/ollama-32b.json",
+        "agents/drafter.json",
       )
 
       expect(lines.length).toBeGreaterThan(0)
@@ -294,11 +294,11 @@ describe("end-to-end smoke specs (ollama)", () => {
   )
 
   ollama_test(
-    "classification with think:false (0.6b)",
+    "classification with think:false (classifier)",
     async () => {
       const { lines, exit_code } = await run_agent(
         '{"role":"user","content":"Categories: question, request, greeting. Classify: Hello there"}',
-        "agents/ollama-06b.json",
+        "agents/classifier.json",
       )
 
       expect(lines.length).toBeGreaterThan(0)

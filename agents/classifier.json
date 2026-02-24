@@ -1,6 +1,6 @@
 {
-  "name": "ollama-06b",
-  "description": "Local Qwen3 0.6B via Ollama for triage and classification.",
+  "name": "classifier",
+  "description": "Fast local classifier for triage and routing.",
   "system": "You are a classifier. Given input, classify it into exactly one category. Reply with just the category name, nothing else.",
   "adapter": "ollama",
   "processes": [],
