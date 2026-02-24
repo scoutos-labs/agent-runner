@@ -1,7 +1,7 @@
 import { decode_stdin } from "./wire"
 import { run } from "./runner"
-import { parse_role } from "./types"
 import { load_manifest } from "./manifest"
+import { ensure_user_message } from "./promote"
 
 const USAGE = `Usage: agent-runner run --agent <path>
 
@@ -43,33 +43,16 @@ async function main() {
     process.exit(1)
   }
 
-  // Read input messages
+  // Read input messages, ensure a user message exists (promotes in chains)
   const messages = await decode_stdin()
+  const result = ensure_user_message(messages)
 
-  // Verify at least one user message exists.
-  // In a chained stream (agent A | agent B), the input only has agent
-  // messages. Promote the last complete agent message to user so
-  // downstream adapters find a goal. This preserves all other
-  // composition patterns (resume, fan-out, tee) because those already
-  // contain user messages and this fallback never activates.
-  const has_user = messages.some((msg) => msg.role && parse_role(msg.role).type === "user")
-  if (!has_user) {
-    let promoted = false
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const parsed = parse_role(messages[i].role)
-      if (parsed.type === "agent" && messages[i].done && typeof messages[i].content === "string") {
-        messages[i] = { ...messages[i], role: "user" }
-        promoted = true
-        break
-      }
-    }
-    if (!promoted) {
-      console.error("agent-runner: no user or agent message found in input")
-      process.exit(1)
-    }
+  if (!result.ok) {
+    console.error(`agent-runner: ${result.error}`)
+    process.exit(1)
   }
 
-  const exit_code = await run(messages, manifest)
+  const exit_code = await run(result.messages, manifest)
   process.exit(exit_code)
 }
 
