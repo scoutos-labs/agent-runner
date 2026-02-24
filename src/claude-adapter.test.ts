@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { build_prompt, build_system_prompt, translate_event } from "./claude-code-adapter"
+import { build_prompt, build_system_prompt, translate_event } from "./claude-adapter"
 import type { Message, AgentManifest } from "./types"
 import { create_encoder } from "./wire"
 

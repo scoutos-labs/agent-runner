@@ -61,7 +61,7 @@ export interface AgentManifest {
 // --- Adapter resolution ---
 
 /** Output format the adapter subprocess emits */
-export type OutputFormat = "wire" | "claude-code-stream-json"
+export type OutputFormat = "wire" | "claude-stream-json"
 
 /** Resolved adapter configuration */
 export type AdapterConfig =

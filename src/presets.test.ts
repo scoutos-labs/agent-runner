@@ -12,18 +12,18 @@ describe("resolve_adapter", () => {
     expect(config.name).toBe("openai")
   })
 
-  test("resolves 'claude-code' preset to command with correct args", () => {
+  test("resolves 'claude' preset to command with correct args", () => {
     const manifest: AgentManifest = {
       ...base_manifest,
       system: "Be helpful.",
-      options: { "claude-code": { model: "claude-sonnet-4-5-20250929" } },
+      options: { "claude": { model: "claude-sonnet-4-5-20250929" } },
     }
-    const config = resolve_adapter("claude-code", manifest, base_messages)
+    const config = resolve_adapter("claude", manifest, base_messages)
     expect(config.kind).toBe("command")
-    expect(config.name).toBe("claude-code")
+    expect(config.name).toBe("claude")
 
     if (config.kind === "command") {
-      expect(config.output_format).toBe("claude-code-stream-json")
+      expect(config.output_format).toBe("claude-stream-json")
       expect(config.cmd[0]).toBe("claude")
       expect(config.cmd).toContain("-p")
       expect(config.cmd).toContain("hello")
@@ -36,28 +36,28 @@ describe("resolve_adapter", () => {
     }
   })
 
-  test("claude-code preset uses default permission_mode", () => {
-    const config = resolve_adapter("claude-code", base_manifest, base_messages)
+  test("claude preset uses default permission_mode", () => {
+    const config = resolve_adapter("claude", base_manifest, base_messages)
     if (config.kind === "command") {
       expect(config.cmd).toContain("--permission-mode")
       expect(config.cmd).toContain("bypassPermissions")
     }
   })
 
-  test("claude-code preset respects max_turns option", () => {
+  test("claude preset respects max_turns option", () => {
     const manifest: AgentManifest = {
       ...base_manifest,
-      options: { "claude-code": { max_turns: 5 } },
+      options: { "claude": { max_turns: 5 } },
     }
-    const config = resolve_adapter("claude-code", manifest, base_messages)
+    const config = resolve_adapter("claude", manifest, base_messages)
     if (config.kind === "command") {
       expect(config.cmd).toContain("--max-turns")
       expect(config.cmd).toContain("5")
     }
   })
 
-  test("claude-code preset omits system prompt when empty", () => {
-    const config = resolve_adapter("claude-code", base_manifest, base_messages)
+  test("claude preset omits system prompt when empty", () => {
+    const config = resolve_adapter("claude", base_manifest, base_messages)
     if (config.kind === "command") {
       expect(config.cmd).not.toContain("--append-system-prompt")
     }

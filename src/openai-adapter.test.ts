@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { translate_messages, translate_tools, get_system_prompt } from "./adapter"
+import { translate_messages, translate_tools, get_system_prompt } from "./openai-adapter"
 import type { Message, AgentManifest } from "./types"
 
 describe("translate_messages", () => {

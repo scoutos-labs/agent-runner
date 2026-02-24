@@ -1,0 +1,14 @@
+{
+  "name": "ollama-06b",
+  "description": "Local Qwen3 0.6B via Ollama for triage and classification.",
+  "system": "You are a classifier. Given input, classify it into exactly one category. Reply with just the category name, nothing else.",
+  "adapter": "ollama",
+  "processes": [],
+  "options": {
+    "ollama": {
+      "model": "qwen3:0.6b",
+      "think": false,
+      "num_predict": 32
+    }
+  }
+}

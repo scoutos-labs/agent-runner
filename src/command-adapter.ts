@@ -1,6 +1,6 @@
 import type { Message, CommandAdapterConfig } from "./types"
 import type { Encoder } from "./wire"
-import { translate_event } from "./claude-code-adapter"
+import { translate_event } from "./claude-adapter"
 
 export interface CommandResult {
   messages: Message[]
@@ -32,7 +32,7 @@ export async function run_command_adapter(
   const stderr_promise = new Response(proc.stderr).text()
   const result_messages: Message[] = []
 
-  if (config.output_format === "claude-code-stream-json") {
+  if (config.output_format === "claude-stream-json") {
     const tool_name_map = new Map<string, string>()
     for await (const line of read_lines(proc.stdout)) {
       try {

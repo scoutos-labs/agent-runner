@@ -1,0 +1,25 @@
+{
+  "name": "ollama-32b",
+  "description": "Local Qwen3 32B via Ollama for general work.",
+  "system": "You are a helpful assistant. Be concise.",
+  "adapter": "ollama",
+  "processes": [
+    {
+      "name": "bash",
+      "description": "Execute a shell command and return its output.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "command": { "type": "string", "description": "The shell command to execute" }
+        },
+        "required": ["command"]
+      }
+    }
+  ],
+  "options": {
+    "ollama": {
+      "model": "qwen3:32b",
+      "num_predict": 2048
+    }
+  }
+}

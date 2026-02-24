@@ -1,5 +1,5 @@
 import type { AgentManifest, Message, AdapterConfig, CommandAdapterConfig } from "./types"
-import { build_prompt, build_system_prompt } from "./claude-code-adapter"
+import { build_prompt, build_system_prompt } from "./claude-adapter"
 
 type PresetBuilder = (manifest: AgentManifest, messages: Message[]) => AdapterConfig
 
@@ -9,8 +9,13 @@ const PRESETS: Record<string, PresetBuilder> = {
     name: "openai",
   }),
 
-  "claude-code": (manifest, messages): CommandAdapterConfig => {
-    const opts = manifest.options?.["claude-code"] ?? {}
+  ollama: (): AdapterConfig => ({
+    kind: "built_in",
+    name: "ollama",
+  }),
+
+  claude: (manifest, messages): CommandAdapterConfig => {
+    const opts = manifest.options?.["claude"] ?? {}
     const prompt = build_prompt(messages)
     const system = build_system_prompt(messages, manifest)
     const model = opts.model as string | undefined
@@ -30,9 +35,9 @@ const PRESETS: Record<string, PresetBuilder> = {
 
     return {
       kind: "command",
-      name: "claude-code",
+      name: "claude",
       cmd,
-      output_format: "claude-code-stream-json",
+      output_format: "claude-stream-json",
     }
   },
 }

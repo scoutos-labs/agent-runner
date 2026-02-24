@@ -161,7 +161,7 @@ describe("end-to-end smoke specs (claude-code)", () => {
     async () => {
       const { lines, exit_code } = await run_agent(
         '{"role":"user","content":"Reply with exactly: hello from agent-runner"}',
-        "agents/basic-claude-code.json",
+        "agents/basic-claude.json",
       )
 
       expect(lines.length).toBeGreaterThan(0)
@@ -184,7 +184,7 @@ describe("end-to-end smoke specs (claude-code)", () => {
     async () => {
       const { lines, exit_code } = await run_agent(
         '{"role":"user","content":"Run this exact bash command and show me the output: echo hello-from-agent-runner"}',
-        "agents/basic-claude-code.json",
+        "agents/basic-claude.json",
       )
 
       expect(lines.length).toBeGreaterThan(0)
@@ -218,7 +218,7 @@ describe("end-to-end smoke specs (claude-code)", () => {
     async () => {
       const { lines } = await run_agent(
         '{"role":"user","content":"What is 2+2? Reply with just the number."}',
-        "agents/basic-claude-code.json",
+        "agents/basic-claude.json",
       )
 
       // run_agent already validates JSON parsing — if we get here, all lines parsed
@@ -232,5 +232,85 @@ describe("end-to-end smoke specs (claude-code)", () => {
       }
     },
     { timeout: 60_000 },
+  )
+})
+
+// --- Ollama adapter ---
+
+let has_ollama = false
+try {
+  const resp = await fetch("http://localhost:11434/api/tags")
+  has_ollama = resp.ok
+} catch {
+  has_ollama = false
+}
+const ollama_test = has_ollama ? test : test.skip
+
+describe("end-to-end smoke specs (ollama)", () => {
+  ollama_test(
+    "simple text response (32b)",
+    async () => {
+      const { lines, exit_code } = await run_agent(
+        '{"role":"user","content":"What is 2+2? Reply with just the number, no thinking."}',
+        "agents/ollama-32b.json",
+      )
+
+      expect(lines.length).toBeGreaterThan(0)
+
+      const done_lines = lines.filter((l) => l.done === true)
+      const agent_dones = done_lines.filter((l) => l.role === "agent")
+      expect(agent_dones.length).toBeGreaterThanOrEqual(1)
+
+      expect(exit_code).toBe(0)
+    },
+    { timeout: 120_000 },
+  )
+
+  ollama_test(
+    "tool calling (32b)",
+    async () => {
+      const { lines, exit_code } = await run_agent(
+        '{"role":"user","content":"List the files in the current directory using ls"}',
+        "agents/ollama-32b.json",
+      )
+
+      expect(lines.length).toBeGreaterThan(0)
+
+      const done_lines = lines.filter((l) => l.done === true)
+
+      const process_calls = done_lines.filter((l) => l.role?.startsWith("process_call:bash"))
+      expect(process_calls.length).toBeGreaterThanOrEqual(1)
+
+      const process_results = done_lines.filter((l) => l.role?.startsWith("process_result:bash"))
+      expect(process_results.length).toBeGreaterThanOrEqual(1)
+      expect(process_results.some((l) => l.exit_code === 0)).toBe(true)
+
+      const agent_dones = done_lines.filter((l) => l.role === "agent")
+      expect(agent_dones.length).toBeGreaterThanOrEqual(1)
+
+      expect(exit_code).toBe(0)
+    },
+    { timeout: 120_000 },
+  )
+
+  ollama_test(
+    "classification with think:false (0.6b)",
+    async () => {
+      const { lines, exit_code } = await run_agent(
+        '{"role":"user","content":"Categories: question, request, greeting. Classify: Hello there"}',
+        "agents/ollama-06b.json",
+      )
+
+      expect(lines.length).toBeGreaterThan(0)
+
+      const done_lines = lines.filter((l) => l.done === true)
+      const agent_dones = done_lines.filter((l) => l.role === "agent")
+      expect(agent_dones.length).toBe(1)
+      // Content should be short (single word classification)
+      expect((agent_dones[0].content as string).length).toBeLessThan(50)
+
+      expect(exit_code).toBe(0)
+    },
+    { timeout: 30_000 },
   )
 })

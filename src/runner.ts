@@ -1,12 +1,22 @@
 import type { Message, AgentManifest } from "./types"
 import { parse_role } from "./types"
 import { create_encoder } from "./wire"
-import { call_llm } from "./adapter"
+import { call_llm as call_openai } from "./openai-adapter"
+import { call_ollama } from "./ollama-adapter"
 import { run_command_adapter } from "./command-adapter"
 import { resolve_adapter } from "./presets"
 import { execute_process } from "./executor"
+import type { AdapterResult } from "./openai-adapter"
+import type { Encoder } from "./wire"
 
 const MAX_TURNS = 20
+
+type CallFn = (messages: Message[], manifest: AgentManifest, encoder: Encoder) => Promise<AdapterResult>
+
+const BUILT_IN_ADAPTERS: Record<string, CallFn> = {
+  openai: call_openai,
+  ollama: call_ollama,
+}
 
 export async function run(
   input_messages: Message[],
@@ -24,10 +34,16 @@ export async function run(
   }
 
   // Built-in adapter — runner manages the tool loop
+  const call_fn = BUILT_IN_ADAPTERS[config.name]
+  if (!call_fn) {
+    console.error(`agent-runner: unknown built-in adapter: ${config.name}`)
+    return 1
+  }
+
   let exhausted = false
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const result = await call_llm(messages, manifest, encoder)
+    const result = await call_fn(messages, manifest, encoder)
     messages.push(...result.messages)
 
     const calls = result.messages.filter((msg) => {
