@@ -1,0 +1,47 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+AGENT_DIR="${AGENT_DIR:-$HOME/Code/agent-runner}"
+AGENTS_DIR="$AGENT_DIR/agents"
+
+usage() {
+  echo "Usage: agent @name [options]" >&2
+  echo "" >&2
+  echo "Resolve @name to a manifest and run it via agent-runner." >&2
+  echo "Input comes from stdin (pipe or redirect)." >&2
+  echo "" >&2
+  echo "Examples:" >&2
+  echo "  echo \"hello\" | agent @dottie" >&2
+  echo "  agent @researcher < topic.md > research.md" >&2
+  echo "  agent @writer < draft.md | agent @reviewer" >&2
+  echo "" >&2
+  echo "Available agents:" >&2
+  for f in "$AGENTS_DIR"/*.json; do
+    [[ -f "$f" ]] && echo "  @$(basename "$f" .json)" >&2
+  done
+  exit 1
+}
+
+# Need at least one argument
+[[ $# -lt 1 ]] && usage
+
+# First arg must be @name
+name="$1"
+shift
+
+if [[ "$name" != @* ]]; then
+  echo "agent: first argument must be @name (got: $name)" >&2
+  exit 1
+fi
+
+# Strip @ prefix, resolve manifest
+agent_name="${name#@}"
+manifest="$AGENTS_DIR/$agent_name.json"
+
+if [[ ! -f "$manifest" ]]; then
+  echo "agent: unknown agent @$agent_name (no manifest at $manifest)" >&2
+  exit 1
+fi
+
+# Run — stdin passes through naturally
+exec bun run "$AGENT_DIR/src/index.ts" run --agent "$manifest" "$@"

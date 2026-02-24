@@ -46,11 +46,27 @@ async function main() {
   // Read input messages
   const messages = await decode_stdin()
 
-  // Verify at least one user message exists
+  // Verify at least one user message exists.
+  // In a chained stream (agent A | agent B), the input only has agent
+  // messages. Promote the last complete agent message to user so
+  // downstream adapters find a goal. This preserves all other
+  // composition patterns (resume, fan-out, tee) because those already
+  // contain user messages and this fallback never activates.
   const has_user = messages.some((msg) => msg.role && parse_role(msg.role).type === "user")
   if (!has_user) {
-    console.error("agent-runner: no user message found in input")
-    process.exit(1)
+    let promoted = false
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const parsed = parse_role(messages[i].role)
+      if (parsed.type === "agent" && messages[i].done && typeof messages[i].content === "string") {
+        messages[i] = { ...messages[i], role: "user" }
+        promoted = true
+        break
+      }
+    }
+    if (!promoted) {
+      console.error("agent-runner: no user or agent message found in input")
+      process.exit(1)
+    }
   }
 
   const exit_code = await run(messages, manifest)
