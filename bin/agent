@@ -1,23 +1,46 @@
 #!/usr/bin/env zsh
 set -euo pipefail
 
-AGENT_DIR="${AGENT_DIR:-$HOME/Code/agent-runner}"
-AGENTS_DIR="$AGENT_DIR/agents"
+# Resolve this script's real location (follows symlinks)
+SCRIPT_DIR="${0:A:h}"
+AGENT_RUNNER_DIR="${SCRIPT_DIR:h}"
+BUILTIN_AGENTS_DIR="$AGENT_RUNNER_DIR/agents"
 
 usage() {
   echo "Usage: agent @name [options]" >&2
+  echo "       agent path/to/manifest.json [options]" >&2
   echo "" >&2
   echo "Resolve @name to a manifest and run it via agent-runner." >&2
   echo "Input comes from stdin (pipe or redirect)." >&2
+  echo "" >&2
+  echo "Agent resolution order:" >&2
+  echo "  1. Explicit path (if argument contains /)" >&2
+  echo "  2. Each directory in AGENT_PATH (colon-separated)" >&2
+  echo "  3. Built-in agents ($BUILTIN_AGENTS_DIR)" >&2
   echo "" >&2
   echo "Examples:" >&2
   echo "  echo \"hello\" | agent @dottie" >&2
   echo "  agent @researcher < topic.md > research.md" >&2
   echo "  agent @writer < draft.md | agent @reviewer" >&2
+  echo "  AGENT_PATH=./agents:~/.agents agent @custom" >&2
   echo "" >&2
   echo "Available agents:" >&2
-  for f in "$AGENTS_DIR"/*.json; do
-    [[ -f "$f" ]] && echo "  @$(basename "$f" .json)" >&2
+  # Show agents from AGENT_PATH then built-ins (deduplicated)
+  local -A seen
+  local dirs=()
+  if [[ -n "${AGENT_PATH:-}" ]]; then
+    IFS=: read -rA dirs <<< "$AGENT_PATH"
+  fi
+  dirs+=("$BUILTIN_AGENTS_DIR")
+  for dir in "${dirs[@]}"; do
+    [[ -d "$dir" ]] || continue
+    for f in "$dir"/*.json(N); do
+      local name="$(basename "$f" .json)"
+      if [[ -z "${seen[$name]:-}" ]]; then
+        echo "  @$name" >&2
+        seen[$name]=1
+      fi
+    done
   done
   exit 1
 }
@@ -25,23 +48,52 @@ usage() {
 # Need at least one argument
 [[ $# -lt 1 ]] && usage
 
-# First arg must be @name
-name="$1"
+# First arg is agent identifier
+identifier="$1"
 shift
 
-if [[ "$name" != @* ]]; then
-  echo "agent: first argument must be @name (got: $name)" >&2
+# --- Resolve manifest path ---
+manifest=""
+
+if [[ "$identifier" == */* ]]; then
+  # Explicit path — use directly
+  manifest="$identifier"
+elif [[ "$identifier" == @* ]]; then
+  # @name — search AGENT_PATH then built-ins
+  agent_name="${identifier#@}"
+
+  # Build search path: AGENT_PATH dirs + built-in fallback
+  search_dirs=()
+  if [[ -n "${AGENT_PATH:-}" ]]; then
+    IFS=: read -rA search_dirs <<< "$AGENT_PATH"
+  fi
+  search_dirs+=("$BUILTIN_AGENTS_DIR")
+
+  for dir in "${search_dirs[@]}"; do
+    candidate="$dir/$agent_name.json"
+    if [[ -f "$candidate" ]]; then
+      manifest="$candidate"
+      break
+    fi
+  done
+
+  if [[ -z "$manifest" ]]; then
+    echo "agent: unknown agent @$agent_name" >&2
+    echo "Searched:" >&2
+    for dir in "${search_dirs[@]}"; do
+      echo "  $dir/" >&2
+    done
+    exit 1
+  fi
+else
+  echo "agent: first argument must be @name or a path (got: $identifier)" >&2
   exit 1
 fi
 
-# Strip @ prefix, resolve manifest
-agent_name="${name#@}"
-manifest="$AGENTS_DIR/$agent_name.json"
-
 if [[ ! -f "$manifest" ]]; then
-  echo "agent: unknown agent @$agent_name (no manifest at $manifest)" >&2
+  echo "agent: manifest not found: $manifest" >&2
   exit 1
 fi
 
 # Run — stdin passes through naturally
-exec bun run "$AGENT_DIR/src/index.ts" run --agent "$manifest" "$@"
+exec bun run "$AGENT_RUNNER_DIR/src/index.ts" run --agent "$manifest" "$@"
