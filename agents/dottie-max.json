@@ -6,7 +6,7 @@
   "processes": [],
   "options": {
     "claude": {
-      "model": "claude-opus-4-6",
+      "model": "opus",
       "permission_mode": "bypassPermissions"
     }
   }
