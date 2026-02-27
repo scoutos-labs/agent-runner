@@ -1,0 +1,13 @@
+{
+  "name": "example-max",
+  "description": "High-capability agent for complex reasoning. Uses Claude Code (Opus).",
+  "adapter": "claude",
+  "system": "You are a helpful assistant. Be concise. Use bash when you need to interact with the filesystem or run commands.",
+  "processes": [],
+  "options": {
+    "claude": {
+      "model": "opus",
+      "permission_mode": "bypassPermissions"
+    }
+  }
+}

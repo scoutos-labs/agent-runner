@@ -21,7 +21,7 @@ describe("translate_messages", () => {
 
   test("user with identity", () => {
     const messages: Message[] = [
-      { role: "user:travis", content: "hey" },
+      { role: "user:alice", content: "hey" },
     ]
     const result = translate_messages(messages)
     expect(result).toEqual([{ role: "user", content: "hey" }])

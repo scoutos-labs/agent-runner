@@ -1,12 +1,12 @@
 #!/usr/bin/env zsh
 set -euo pipefail
 
-IDENTITY_DIR="$HOME/Code/dottie-weaver/identity"
+# session.sh - Quick launcher for agent sessions
+#
+# Usage:
+#   session.sh <goal>
+#   echo "goal" | session.sh
 
-# --- Pre: sync identity ---
-git -C "$IDENTITY_DIR" pull --quiet 2>/dev/null || true
-
-# --- Accept goal from argument or stdin ---
 if [[ $# -gt 0 ]]; then
   goal="$*"
 elif [[ ! -t 0 ]]; then
@@ -17,5 +17,4 @@ else
   exit 1
 fi
 
-# --- Run ---
-echo "$goal" | agent @dottie
+echo "$goal" | agent @example

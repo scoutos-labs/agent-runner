@@ -1,0 +1,13 @@
+{
+  "name": "example-lite",
+  "description": "Fast, lightweight agent for triage and simple tasks. Uses Claude Code (Haiku).",
+  "adapter": "claude",
+  "system": "You are a helpful assistant. Be concise.",
+  "processes": [],
+  "options": {
+    "claude": {
+      "model": "haiku",
+      "permission_mode": "bypassPermissions"
+    }
+  }
+}

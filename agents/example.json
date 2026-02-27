@@ -1,0 +1,13 @@
+{
+  "name": "example",
+  "description": "Example agent with bash access. Uses Claude Code (Sonnet).",
+  "adapter": "claude",
+  "system": "You are a helpful assistant. Be concise. Use bash when you need to interact with the filesystem or run commands.",
+  "processes": [],
+  "options": {
+    "claude": {
+      "model": "sonnet",
+      "permission_mode": "bypassPermissions"
+    }
+  }
+}

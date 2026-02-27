@@ -30,7 +30,7 @@ describe("build_prompt", () => {
 
   test("handles user with identity", () => {
     const messages: Message[] = [
-      { role: "user:travis", content: "hello" },
+      { role: "user:alice", content: "hello" },
     ]
     expect(build_prompt(messages)).toBe("hello")
   })

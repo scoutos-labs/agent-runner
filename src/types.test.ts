@@ -7,7 +7,7 @@ describe("parse_role", () => {
   })
 
   test("user with identity", () => {
-    expect(parse_role("user:travis")).toEqual({ type: "user", identity: "travis" })
+    expect(parse_role("user:alice")).toEqual({ type: "user", identity: "alice" })
   })
 
   test("agent with identity", () => {
