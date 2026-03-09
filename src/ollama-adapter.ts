@@ -148,7 +148,7 @@ export async function call_ollama(
   encoder: Encoder,
 ): Promise<AdapterResult> {
   const opts = manifest.options?.ollama ?? {}
-  const model = (opts.model as string) ?? "qwen3:32b"
+  const model = (opts.model as string) ?? "qwen3.5:35b-a3b"
   const base_url = (opts.base_url as string) ?? "http://localhost:11434"
   const think = (opts.think as boolean) ?? true
   const num_predict = (opts.num_predict as number) ?? 2048
