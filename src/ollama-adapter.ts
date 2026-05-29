@@ -22,7 +22,7 @@ interface OllamaMessage {
 
 interface OllamaStreamChunk {
   model: string
-  message: {
+  message?: {
     role: string
     content: string
     tool_calls?: OllamaToolCall[]
@@ -38,6 +38,18 @@ interface OllamaTool {
     description: string
     parameters: Record<string, unknown>
   }
+}
+
+export function build_ollama_headers(opts: Record<string, unknown>): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  const api_key_env = (opts.api_key_env as string | undefined) ?? "OLLAMA_API_KEY"
+  const api_key = (opts.api_key as string | undefined) ?? process.env[api_key_env]
+
+  if (api_key) {
+    headers.Authorization = `Bearer ${api_key}`
+  }
+
+  return headers
 }
 
 // --- Message translation (Ollama-native format) ---
@@ -107,7 +119,7 @@ export function translate_tools(manifest: AgentManifest): OllamaTool[] {
 // --- Streaming ---
 
 /** Read NDJSON lines from a streaming response body. */
-async function* read_ndjson(body: ReadableStream<Uint8Array>): AsyncGenerator<OllamaStreamChunk> {
+export async function* read_ndjson(body: ReadableStream<Uint8Array>): AsyncGenerator<OllamaStreamChunk> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
@@ -175,7 +187,7 @@ export async function call_ollama(
 
   const response = await fetch(`${base_url}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: build_ollama_headers(opts),
     body: JSON.stringify(body),
   })
 
@@ -194,6 +206,10 @@ export async function call_ollama(
 
   for await (const chunk of read_ndjson(response.body)) {
     const msg = chunk.message
+
+    if (!msg) {
+      continue
+    }
 
     // Tool calls — emitted on the final chunk
     if (msg.tool_calls && msg.tool_calls.length > 0) {

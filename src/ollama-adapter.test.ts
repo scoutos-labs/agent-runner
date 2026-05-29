@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { translate_messages, translate_tools } from "./ollama-adapter"
+import { build_ollama_headers, read_ndjson, translate_messages, translate_tools } from "./ollama-adapter"
 import type { Message, AgentManifest } from "./types"
 
 describe("translate_messages", () => {
@@ -112,5 +112,67 @@ describe("translate_tools", () => {
         },
       },
     }])
+  })
+})
+
+describe("build_ollama_headers", () => {
+  test("uses JSON headers without credentials by default", () => {
+    const previous = process.env.OLLAMA_API_KEY
+    delete process.env.OLLAMA_API_KEY
+
+    try {
+      expect(build_ollama_headers({})).toEqual({ "Content-Type": "application/json" })
+    } finally {
+      if (previous === undefined) delete process.env.OLLAMA_API_KEY
+      else process.env.OLLAMA_API_KEY = previous
+    }
+  })
+
+  test("uses OLLAMA_API_KEY when present", () => {
+    const previous = process.env.OLLAMA_API_KEY
+    process.env.OLLAMA_API_KEY = "test-key"
+
+    try {
+      expect(build_ollama_headers({})).toEqual({
+        "Content-Type": "application/json",
+        Authorization: "Bearer test-key",
+      })
+    } finally {
+      if (previous === undefined) delete process.env.OLLAMA_API_KEY
+      else process.env.OLLAMA_API_KEY = previous
+    }
+  })
+
+  test("supports a custom API key env var", () => {
+    const previous = process.env.DOTTIE_OLLAMA_KEY
+    process.env.DOTTIE_OLLAMA_KEY = "custom-key"
+
+    try {
+      expect(build_ollama_headers({ api_key_env: "DOTTIE_OLLAMA_KEY" })).toEqual({
+        "Content-Type": "application/json",
+        Authorization: "Bearer custom-key",
+      })
+    } finally {
+      if (previous === undefined) delete process.env.DOTTIE_OLLAMA_KEY
+      else process.env.DOTTIE_OLLAMA_KEY = previous
+    }
+  })
+})
+
+describe("read_ndjson", () => {
+  test("parses chunks without message fields", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"done":true}\n'))
+        controller.close()
+      },
+    })
+
+    const chunks = []
+    for await (const chunk of read_ndjson(stream)) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks).toEqual([{ done: true }])
   })
 })
