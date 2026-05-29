@@ -9,13 +9,35 @@ import { execute_process } from "./executor"
 import type { AdapterResult } from "./openai-adapter"
 import type { Encoder } from "./wire"
 
-const MAX_TURNS = 20
+const DEFAULT_MAX_TURNS = Number(process.env.AGENT_RUNNER_MAX_TURNS ?? 20)
+const HARD_MAX_TURNS = Number(process.env.AGENT_RUNNER_HARD_MAX_TURNS ?? 200)
 
 type CallFn = (messages: Message[], manifest: AgentManifest, encoder: Encoder) => Promise<AdapterResult>
 
 const BUILT_IN_ADAPTERS: Record<string, CallFn> = {
   openai: call_openai,
   ollama: call_ollama,
+}
+
+export function resolve_max_turns(manifest: AgentManifest): number {
+  const configured = manifest.options?.runner?.max_turns
+  const requested = typeof configured === "number" ? configured : DEFAULT_MAX_TURNS
+
+  if (!Number.isFinite(requested) || requested < 1) {
+    return DEFAULT_MAX_TURNS
+  }
+
+  return Math.min(Math.floor(requested), HARD_MAX_TURNS)
+}
+
+export function build_runner_system_prompt(max_turns: number): string {
+  return [
+    "## Runner Budget",
+    `This agent-runner invocation allows at most ${max_turns} model turns.`,
+    "A turn is one model response, whether it answers directly or calls tools.",
+    "Manage the budget deliberately: batch safe read-only checks, avoid repetitive tool loops, and reserve enough turns to verify and summarize.",
+    "If the work cannot be completed inside the remaining budget, stop before exhaustion and report the exact remaining blocker plus the next command or decision needed.",
+  ].join("\n")
 }
 
 export async function run(
@@ -26,6 +48,8 @@ export async function run(
   const messages: Message[] = [...input_messages]
 
   const config = resolve_adapter(manifest.adapter ?? "openai", manifest, messages)
+  const max_turns = resolve_max_turns(manifest)
+  messages.unshift({ role: "system", content: build_runner_system_prompt(max_turns) })
 
   // Command-based adapter — self-managed tool loop
   if (config.kind === "command") {
@@ -42,7 +66,7 @@ export async function run(
 
   let exhausted = false
 
-  for (let turn = 0; turn < MAX_TURNS; turn++) {
+  for (let turn = 0; turn < max_turns; turn++) {
     const result = await call_fn(messages, manifest, encoder)
     messages.push(...result.messages)
 
@@ -67,13 +91,13 @@ export async function run(
       messages.push(result_msg)
     }
 
-    if (turn === MAX_TURNS - 1) {
+    if (turn === max_turns - 1) {
       exhausted = true
     }
   }
 
   if (exhausted) {
-    console.error(`agent-runner: max turns (${MAX_TURNS}) reached, stopping`)
+    console.error(`agent-runner: max turns (${max_turns}) reached, stopping`)
     return 1
   }
 
